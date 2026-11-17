@@ -3,13 +3,11 @@
   xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
   <Domain>
     <General>
-      <Interfaces>
-        <NetworkInterface name="eth1" />
-      </Interfaces>
+      <!-- 네트워크 인터페이스 이름은 PC·WSL 설정마다 달라(eth0, eth1 ...) 고정하지 않고 CycloneDDS 자동 선택에 맡긴다 -->
       <AllowMulticast>true</AllowMulticast>
     </General>
     <Discovery>
-      <!-- Explicit peers in case multicast doesn't work on WiFi -->
+      <!-- Explicit peers in case multicast doesn't work on WiFi. RPi IP -->
       <Peers>
         <Peer address="192.168.0.71"/>
       </Peers>
