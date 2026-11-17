@@ -5,7 +5,8 @@ RPi 또는 WSL에서 실행 가능.
 RPi에서 실행 시: rasp_bringup과 같은 머신에서 토픽 직접 수신.
 WSL에서 실행 시: CycloneDDS를 통해 RPi 토픽 수신 + RViz 시각화.
 
-Ctrl+C 종료 시 ~/maps/ 에 pbstream + pgm/yaml 자동 저장.
+맵 저장: SLAM이 켜져 있는 동안 다른 터미널에서 ~/ugv_ws/save_map.sh [이름] 실행 후 Ctrl+C로 종료.
+(Ctrl+C 시점 자동 저장은 Cartographer가 먼저 꺼져 저장 요청이 실패하므로 제거함)
 
 Usage:
   ros2 launch ugv_roarm_description slam_real.launch.py
@@ -13,9 +14,8 @@ Usage:
 """
 
 import os
-from datetime import datetime
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -29,13 +29,6 @@ def generate_launch_description():
     rviz_config = os.path.join(pkg_dir, 'rviz', 'slam_view.rviz')
 
     use_rviz = LaunchConfiguration('use_rviz')
-
-    # Auto-save map on shutdown
-    map_dir = os.path.expanduser('~/maps')
-    os.makedirs(map_dir, exist_ok=True)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    map_path = os.path.join(map_dir, f'map_{timestamp}')
-    pbstream_path = f'{map_path}.pbstream'
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -82,28 +75,5 @@ def generate_launch_description():
             arguments=['-d', rviz_config],
             additional_env={'LIBGL_ALWAYS_SOFTWARE': '1'},
             condition=IfCondition(use_rviz),
-        ),
-
-        # Map auto-saver: saves pbstream + pgm/yaml on Ctrl+C
-        ExecuteProcess(
-            cmd=['bash', '-c',
-                 f"cleanup() {{ "
-                 f"echo '[map_saver] Finishing trajectory and saving pbstream...'; "
-                 f"ros2 service call /finish_trajectory "
-                 f"cartographer_ros_msgs/srv/FinishTrajectory "
-                 f"'{{trajectory_id: 0}}' 2>/dev/null; "
-                 f"sleep 1; "
-                 f"ros2 service call /write_state "
-                 f"cartographer_ros_msgs/srv/WriteState "
-                 f"'{{filename: \"{pbstream_path}\", "
-                 f"include_unfinished_submaps: true}}' 2>/dev/null; "
-                 f"sleep 1; "
-                 f"echo '[map_saver] Saving occupancy grid map...'; "
-                 f"ros2 run nav2_map_server map_saver_cli -f {map_path} 2>/dev/null; "
-                 f"echo '[map_saver] Done: {map_path}.pgm/.yaml + {pbstream_path}'; "
-                 f"exit 0; "
-                 f"}}; trap cleanup INT TERM; "
-                 f"while true; do sleep 1; done"],
-            output='screen',
         ),
     ])

@@ -3,7 +3,9 @@
 > [waveshareteam/ugv_ws](https://github.com/waveshareteam/ugv_ws) 포크 — C++ 실시간 드라이버 + STOMP 웹 브릿지 통합
 
 UGV Wave Rover + RoArm-M2 로봇팔을 구동하는 ROS 2 워크스페이스입니다.
-RPi에서 하드웨어를 직접 제어하고, STOMP/WebSocket을 통해 웹 대시보드와 연동합니다.
+RPi에서 하드웨어를 직접 제어하고 STOMP/WebSocket을 통해 웹 대시보드와 연동합니다.
+
+> **처음 받는다면 [TUTORIAL.md](TUTORIAL.md)부터 보세요.** 새 PC에서 대시보드 구동, 실기 연결, 맵 생성과 교체, Nav2 확인까지 순서대로 정리했습니다.
 
 ## 시스템 아키텍처
 
@@ -68,8 +70,12 @@ RPi에서 하드웨어를 직접 제어하고, STOMP/WebSocket을 통해 웹 대
 | 포트 | 장치 | 드라이버 | 패키지 |
 |------|------|---------|--------|
 | `/dev/ttyAMA0` | UGV 바퀴 ESP32 | `ugv_driver_node` (C++) | `ugv_cpp_nodes` |
-| `/dev/ttyUSB0` | RoArm-M2 ESP32 | `roarm_driver_node` (C++) | `ugv_cpp_nodes` |
-| `/dev/ttyUSB1` | LDLidar LD19 | `ldlidar_ros2_node` (C++) | `ldlidar_ros2` |
+| `roarm_port` 인자 (by-path 권장) | RoArm-M2 ESP32 | `roarm_driver_node` (C++) | `ugv_cpp_nodes` |
+| `/dev/serial/by-path/...usb-0:1.4:1.0-port0` | LDLidar LD19 | `ldlidar_ros2_node` (C++) | `ldlidar_ros2` |
+
+USB 장치는 ttyUSB 번호가 아니라 꽂힌 USB 구멍(by-path) 기준으로 찾습니다. ttyUSB 번호는 꽂힌 장치 수에 따라 바뀌기 때문입니다.
+LiDAR는 지금 꽂힌 구멍(USB 허브 1.4번)에서 빼지 마세요. 옮겼다면 `ls -l /dev/serial/by-path/`로 경로를 확인해 `lidar_port:=` 인자로 넘깁니다.
+`roarm_port`를 비워 두면 로봇팔 드라이버는 뜨지 않습니다.
 
 ## 주요 노드 상세
 
@@ -95,11 +101,12 @@ RPi에서 하드웨어를 직접 제어하고, STOMP/WebSocket을 통해 웹 대
 - **발행 (상향)**: `ugv01.pose`(5Hz), `ugv01.voltage`(0.2Hz), `ugv01.joint_states`(3Hz), `ugv01.scan`(2Hz, 4x 다운샘플), `ugv01.map_pose`(5Hz), `ugv01.nav_status`, `ugv01.path`
 - **안전장치**: 0.5초 이상 cmd_vel 없으면 자동 정지 명령 발행
 - **OAuth2**: `oauth2_jwks_uri` 파라미터로 JWT 검증 활성화 가능 (현재 개발 환경에서는 비활성화)
+- **브로커 주소**: `stomp_host`(대시보드 Docker를 띄운 PC IP)는 `bridge_params.yaml` 기본값을 쓰고 launch 인자 `stomp_host:=<PC IP>`로 덮어쓸 수 있습니다
 
 ### LiDAR 설정
 
-- Angle Crop: 210~329도 제거 (로봇팔이 가리는 후방)
-- 유효 시야: 약 240도
+- 기본: 360도 전체 사용 (2026-11 현재 로봇팔 탈거 상태)
+- 로봇팔을 다시 달면 `lidar_angle_crop:=true`로 띄웁니다. 팔이 가리는 후방 210~329도를 스캔에서 빼서 유효 시야가 약 240도가 됩니다
 
 ---
 
@@ -154,11 +161,14 @@ source /opt/ros/humble/setup.bash
 source ~/ugv_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-alias ugv-launch='ros2 launch ugv_roarm_description rasp_bringup.launch.py 2>&1 | grep -v -E "serdata|rcutils_reset_error|error state is being overwritten|with this new error message|error_handling.c|>>>|<<<"'
-alias ugv-nav='ros2 launch ugv_roarm_description nav_real.launch.py pbstream:=/home/pi/maps/lab_map.pbstream 2>&1 | grep -v -E "serdata|rcutils_reset_error|error state is being overwritten|with this new error message|error_handling.c|>>>|<<<"'
+UGV_LOG_FILTER='serdata|rcutils_reset_error|error state is being overwritten|with this new error message|error_handling.c|>>>|<<<'
+ugv-launch() { ros2 launch ugv_roarm_description rasp_bringup.launch.py "$@" 2>&1 | grep -v -E "$UGV_LOG_FILTER"; }
+ugv-nav() { ros2 launch ugv_roarm_description nav_real.launch.py pbstream:=/home/pi/maps/lab_map.pbstream "$@" 2>&1 | grep -v -E "$UGV_LOG_FILTER"; }
 EOF
 source ~/.bashrc
 ```
+
+alias가 아니라 함수로 정의해야 `ugv-launch stomp_host:=<PC IP>`처럼 붙인 인자가 launch로 전달됩니다. alias로 두면 인자가 grep으로 넘어갑니다.
 
 ### 5. USB 포트 권한
 
@@ -174,13 +184,14 @@ sudo usermod -aG dialout pi
 ### 전제 조건
 
 - Docker Desktop 설치 완료
-- `com.ubisam.boilerplate.frontend` 리포 클론 완료
+- [ugv-frontend](https://github.com/ubisamRAD/ugv-frontend) 리포 클론 완료
+- 같은 포트(9020, 9030, 15672, 15674, 61613, 5432)를 쓰는 다른 스택이 없어야 함. 예전 boilerplate나 gmoma-frontend 스택이 떠 있으면 먼저 내립니다. 확인 방법은 [TUTORIAL.md](TUTORIAL.md) 2단계에 있습니다.
 
 ### Docker 서비스 실행
 
 ```bash
-cd C:\Users\User\Desktop\com.ubisam.boilerplate.frontend
-docker compose -f Dockerfile-dev.yml up -d
+cd ugv-frontend
+docker compose -f Dockerfile-robot.yml up -d
 ```
 
 실행되는 서비스:
@@ -190,7 +201,6 @@ docker compose -f Dockerfile-dev.yml up -d
 | oauth2-web | :9020 | OAuth2 인증 서버 |
 | stomp-web | :9030 | STOMP 프록시 (OAuth2 검증 + RabbitMQ 중계) |
 | stomp-mq | :15674, :15672, :61613 | RabbitMQ (Web STOMP + 관리 UI) |
-| examples-backend | :8080 | Spring Boot 백엔드 |
 | oauth2-db | :5432 | PostgreSQL |
 
 ---
@@ -244,32 +254,35 @@ export CYCLONEDDS_URI=file://$HOME/ugv_ws/src/ugv_main/ugv_bridge/config/cyclone
 
 ## 매일 실행
 
-### 1. Docker 서비스 확인 (윈도우)
+### 1. Docker 서비스 확인 ([PC-1], PC PowerShell)
 
 ```powershell
 docker ps --format "table {{.Names}}\t{{.Ports}}"
 ```
 
-### 2. RPi: 로봇 기동
+PC에서 터미널을 열고 SSH로 접속한 RPi 터미널에서 실행합니다. 터미널 구분과 자세한 순서는 [TUTORIAL.md](TUTORIAL.md)를 따릅니다.
+
+### 2. RPi: 로봇 기동 ([RPi-2], PC에서 새 터미널을 열어 SSH 접속)
 
 ```bash
 ssh pi@192.168.0.71
-ugv-launch
+pgrep -af "ros2 launch"          # 이미 떠 있는 launch가 있으면 먼저 내린다 (중복 실행 금지)
+ugv-launch stomp_host:=<대시보드 PC IP>
 ```
 
-### 3. RPi: Nav2 자율주행 (별도 터미널)
+### 3. RPi: Nav2 자율주행 ([RPi-3], PC에서 새 터미널을 하나 더 열어 SSH 접속)
 
 ```bash
 ssh pi@192.168.0.71
 ugv-nav
 ```
 
-### 4. 대시보드 (윈도우 터미널)
+### 4. 대시보드 ([PC-2], PC에서 새 PowerShell)
 
 ```bash
-cd C:\Users\User\Desktop\com.ubisam.boilerplate.frontend
-npm run dev.robot
-# → http://localhost:3000 접속
+cd ugv-frontend
+npm run dev
+# → http://localhost:3000 접속, oauth2-web / oauth2-web 로그인
 ```
 
 ### 5. RViz 시각화 (WSL, 선택)

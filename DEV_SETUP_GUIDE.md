@@ -177,33 +177,6 @@ source install/setup.bash
 ros2 launch ugv_roarm_description rasp_bringup.launch.py
 ```
 
-### RPi RabbitMQ 설정
-
-ugv_bridge가 MQTT로, 대시보드가 STOMP WebSocket으로 통신하기 위해 RabbitMQ가 필요합니다:
-
-```bash
-# 설치
-sudo apt install -y rabbitmq-server
-
-# 플러그인 활성화
-sudo rabbitmq-plugins enable rabbitmq_mqtt rabbitmq_web_stomp rabbitmq_management
-
-# 외부 접속 허용 (guest 계정)
-echo "loopback_users = none" | sudo tee /etc/rabbitmq/rabbitmq.conf
-sudo systemctl restart rabbitmq-server
-
-# Mosquitto가 실행 중이면 중지 (포트 1883 충돌 방지)
-sudo systemctl stop mosquitto
-sudo systemctl disable mosquitto
-```
-
-RabbitMQ 포트:
-| 포트 | 프로토콜 | 용도 |
-|------|----------|------|
-| 1883 | MQTT | ugv_bridge 연결 |
-| 15674 | Web STOMP | 대시보드 WebSocket 연결 |
-| 15672 | HTTP | RabbitMQ 관리 UI |
-
 ---
 
 ## 6. ugv_dashboard 개발 환경

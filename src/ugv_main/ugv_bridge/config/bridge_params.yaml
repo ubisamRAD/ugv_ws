@@ -8,7 +8,9 @@
     # When RPi uses ROS namespace, set the matching prefix here
     ugv01_topic_prefix: ""
 
-    # ── STOMP broker (RabbitMQ Web STOMP on WSL) ──
+    # ── STOMP broker (RabbitMQ Web STOMP, 대시보드 Docker를 띄운 PC) ──
+    # 기본값. PC가 바뀌면 빌드하지 말고 launch 인자로 덮어쓴다:
+    #   ros2 launch ugv_roarm_description rasp_bringup.launch.py stomp_host:=<PC IP>
     stomp_host: "192.168.0.85"
     stomp_port: 15674
     stomp_user: "stomp-mq"
@@ -20,7 +22,7 @@
 
     # ── OAuth2 JWT verification (empty = disabled) ──
     # OAuth2 JWT verification (empty = disabled, enable in production)
-    # oauth2_jwks_uri: "http://192.168.0.85:9020/oauth2/jwks"
+    # 활성화 예: oauth2_jwks_uri:="http://<PC IP>:9020/oauth2/jwks" (launch 인자로도 지정 가능)
     oauth2_jwks_uri: ""
 
     # ── SQLite database ──
