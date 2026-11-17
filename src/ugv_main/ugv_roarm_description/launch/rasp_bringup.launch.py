@@ -1,13 +1,30 @@
 import os
 from launch import LaunchDescription
-from launch.actions import SetEnvironmentVariable
-from launch.substitutions import Command
+from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
+from launch.conditions import IfCondition
+from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 
+# 시리얼 포트는 ttyUSB 번호 대신 USB 물리 포트(by-path) 기준으로 고정한다.
+# ttyUSB 번호는 꽂힌 장치 수와 순서에 따라 바뀌어, RoArm이 빠지면 LiDAR가
+# ttyUSB0이 되어 RoArm 드라이버가 LiDAR 포트를 잡는 문제가 있었다.
+# LiDAR(LD19): RPi4 USB 허브 1.4번 포트
+DEFAULT_LIDAR_PORT = ('/dev/serial/by-path/'
+                      'platform-fd500000.pcie-pci-0000:01:00.0-usb-0:1.4:1.0-port0')
+
 
 def generate_launch_description():
+
+    lidar_port = LaunchConfiguration('lidar_port')
+    roarm_port = LaunchConfiguration('roarm_port')
+    declare_lidar_port = DeclareLaunchArgument(
+        'lidar_port', default_value=DEFAULT_LIDAR_PORT,
+        description='LD19 LiDAR serial port (by-path 권장)')
+    declare_roarm_port = DeclareLaunchArgument(
+        'roarm_port', default_value='',
+        description='RoArm-M2 serial port (by-path 권장). 비우면 roarm_driver를 띄우지 않는다')
 
     pkg_dir = get_package_share_directory('ugv_roarm_description')
     # URDF via xacro
@@ -58,8 +75,9 @@ def generate_launch_description():
         name='roarm_driver',
         output='screen',
         parameters=[{
-            'serial_port': '/dev/ttyUSB0',
+            'serial_port': roarm_port,
         }],
+        condition=IfCondition(PythonExpression(["'", roarm_port, "' != ''"])),
     )
 
     # 6. LDLidar (STL-19P / LD19) — /scan laser data
@@ -75,7 +93,7 @@ def generate_launch_description():
             'laser_scan_topic_name': 'scan',
             'point_cloud_2d_topic_name': 'pointcloud2d',
             'frame_id': 'base_laser',
-            'port_name': '/dev/ttyUSB1',
+            'port_name': lidar_port,
             'serial_baudrate': 230400,
             'laser_scan_dir': True,
             'enable_angle_crop_func': True,
@@ -115,6 +133,8 @@ def generate_launch_description():
     use_cyclonedds = SetEnvironmentVariable('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
 
     return LaunchDescription([
+        declare_lidar_port,
+        declare_roarm_port,
         use_cyclonedds,
         robot_state_publisher_node,
         ugv_driver_node,
