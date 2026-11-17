@@ -1,6 +1,6 @@
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, SetEnvironmentVariable
 from launch.conditions import IfCondition
 from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
@@ -25,6 +25,13 @@ def generate_launch_description():
     declare_roarm_port = DeclareLaunchArgument(
         'roarm_port', default_value='',
         description='RoArm-M2 serial port (by-path 권장). 비우면 roarm_driver를 띄우지 않는다')
+    # 대시보드 스택(Docker)을 띄운 PC의 IP. 비우면 bridge_params.yaml 값을 쓴다.
+    declare_stomp_host = DeclareLaunchArgument(
+        'stomp_host', default_value='',
+        description='STOMP broker(RabbitMQ :15674) host = 대시보드 PC IP. 비우면 bridge_params.yaml 값')
+    declare_jwks_uri = DeclareLaunchArgument(
+        'oauth2_jwks_uri', default_value='',
+        description='FastAPI JWT 검증용 JWKS URI. 비우면 bridge_params.yaml 값(기본 비활성)')
 
     pkg_dir = get_package_share_directory('ugv_roarm_description')
     # URDF via xacro
@@ -105,15 +112,26 @@ def generate_launch_description():
     )
 
     # 7. UGV Bridge — STOMP + REST API bridge for web dashboard
+    # launch 인자로 준 값만 yaml 위에 덮어쓴다 (빈 값은 yaml 유지)
     bridge_params = os.path.join(
         get_package_share_directory('ugv_bridge'), 'config', 'bridge_params.yaml')
-    bridge_node = Node(
-        package='ugv_bridge',
-        executable='bridge_node',
-        name='ugv_bridge',
-        output='screen',
-        parameters=[bridge_params],
-    )
+
+    def make_bridge_node(context):
+        overrides = {}
+        for key in ('stomp_host', 'oauth2_jwks_uri'):
+            value = LaunchConfiguration(key).perform(context).strip()
+            if value:
+                overrides[key] = value
+        params = [bridge_params] + ([overrides] if overrides else [])
+        return [Node(
+            package='ugv_bridge',
+            executable='bridge_node',
+            name='ugv_bridge',
+            output='screen',
+            parameters=params,
+        )]
+
+    bridge_node = OpaqueFunction(function=make_bridge_node)
 
     # 8. Static TF: base_lidar_link → base_laser
     # LiDAR publishes with frame_id 'base_laser', URDF has 'base_lidar_link'
@@ -135,6 +153,8 @@ def generate_launch_description():
     return LaunchDescription([
         declare_lidar_port,
         declare_roarm_port,
+        declare_stomp_host,
+        declare_jwks_uri,
         use_cyclonedds,
         robot_state_publisher_node,
         ugv_driver_node,
