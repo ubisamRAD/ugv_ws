@@ -18,6 +18,7 @@ DEFAULT_LIDAR_PORT = ('/dev/serial/by-path/'
 def generate_launch_description():
 
     lidar_port = LaunchConfiguration('lidar_port')
+    lidar_angle_crop = LaunchConfiguration('lidar_angle_crop')
     roarm_port = LaunchConfiguration('roarm_port')
     declare_lidar_port = DeclareLaunchArgument(
         'lidar_port', default_value=DEFAULT_LIDAR_PORT,
@@ -25,6 +26,10 @@ def generate_launch_description():
     declare_roarm_port = DeclareLaunchArgument(
         'roarm_port', default_value='',
         description='RoArm-M2 serial port (by-path 권장). 비우면 roarm_driver를 띄우지 않는다')
+    # 로봇팔이 LiDAR 후방(210~329도)을 가릴 때만 켠다. 팔 탈거 상태(2026-11)라 기본은 360도 전체 사용.
+    declare_lidar_angle_crop = DeclareLaunchArgument(
+        'lidar_angle_crop', default_value='false',
+        description='true면 로봇팔에 가리는 210~329도 구간을 LiDAR 스캔에서 제외')
     # 대시보드 스택(Docker)을 띄운 PC의 IP. 비우면 bridge_params.yaml 값을 쓴다.
     declare_stomp_host = DeclareLaunchArgument(
         'stomp_host', default_value='',
@@ -103,7 +108,7 @@ def generate_launch_description():
             'port_name': lidar_port,
             'serial_baudrate': 230400,
             'laser_scan_dir': True,
-            'enable_angle_crop_func': True,
+            'enable_angle_crop_func': ParameterValue(lidar_angle_crop, value_type=bool),
             'angle_crop_min': 210.0,
             'angle_crop_max': 329.0,
             'range_min': 0.02,
@@ -153,6 +158,7 @@ def generate_launch_description():
     return LaunchDescription([
         declare_lidar_port,
         declare_roarm_port,
+        declare_lidar_angle_crop,
         declare_stomp_host,
         declare_jwks_uri,
         use_cyclonedds,
